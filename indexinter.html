@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Optimization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        form {
+            max-width: 600px;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            float: right;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #f0f0f0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Portfolio Optimization</h1>
+    <form id="portfolioForm">
+        <label for="tickers">Stock Names (comma-separated):</label>
+        <input type="text" id="tickers" name="tickers" required><br><br>
+
+        <label for="startDate">Start Date:</label>
+        <input type="date" id="startDate" name="startDate" required><br><br>
+
+        <label for="endDate">End Date:</label>
+        <input type="date" id="endDate" name="endDate" required><br><br>
+
+        <label for="targetBeta">Target Beta:</label>
+        <input type="text" id="targetBeta" name="targetBeta" required><br><br>
+
+        <label for="minWeight">Minimum Weightage (%) for Stocks:</label>
+        <input type="text" id="minWeight" name="minWeight" value="5" required><br><br>
+
+        <label for="maxWeight">Maximum Weightage (%) for Stocks:</label>
+        <input type="text" id="maxWeight" name="maxWeight" value="30" required><br><br>
+
+        <label for="maximizeAlpha">Maximize Alpha:</label>
+        <input type="checkbox" id="maximizeAlpha" name="maximizeAlpha" checked><br><br>
+
+        <label for="fixedWeights">Fixed Weights (%):</label><br>
+        <textarea id="fixedWeights" name="fixedWeights" rows="4" cols="50"
+            placeholder="Ticker:Percentage, e.g., HDFCBANK:10, NESTLEIND:20"></textarea><br><br>
+
+        <button type="submit">Optimize Portfolio</button>
+
+    </form>
+
+    <div id="result"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        document.getElementById('portfolioForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<p>Loading...</p>`;
+
+            const tickers = document.getElementById('tickers').value.split(',').map(ticker => ticker.trim() + '.NS');
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const targetBeta = parseFloat(document.getElementById('targetBeta').value);
+            const minWeight = parseFloat(document.getElementById('minWeight').value);
+            const maxWeight = parseFloat(document.getElementById('maxWeight').value);
+            const maximizeAlpha = document.getElementById('maximizeAlpha').checked;
+
+            const fixedWeightsInput = document.getElementById('fixedWeights').value.trim();
+            let fixedWeights = {};
+            if (fixedWeightsInput) {
+                fixedWeights = Object.fromEntries(fixedWeightsInput.split(',').map(pair => {
+                    const [ticker, weight] = pair.split(':').map(item => item.trim() + '.NS');
+                    return [ticker, parseFloat(weight)];
+                }));
+            }
+
+            axios.post('http://localhost:5000/optimize', {
+                tickers: tickers,
+                start_date: startDate,
+                end_date: endDate,
+                target_beta: targetBeta,
+                min_weight: minWeight,
+                max_weight: maxWeight,
+                maximize_alpha: maximizeAlpha,
+                fixed_weights: fixedWeights
+            })
+                .then(function (response) {
+                    const result = response.data;
+                    if (result.error) {
+                        resultDiv.innerHTML = `<p>Error: ${result.error}</p>`;
+                        return;
+                    }
+
+                    resultDiv.innerHTML = `
+                       <h2>Optimal Portfolio</h2>
+                       <p>Target Beta: ${result.target_beta.toFixed(2)}</p>
+                       <p>Portfolio Alpha (%): ${result.portfolio_alpha_percent.toFixed(2)}</p>
+                       <p>Portfolio Beta: ${result.portfolio_beta.toFixed(2)}</p>
+                       <p>Market Return (%): ${result.market_return_percent.toFixed(2)}</p>
+                       <p>Portfolio Return (%): ${result.portfolio_return_percent.toFixed(2)}</p>
+                       <p>Stocks excluded due to unavailibility of data: ${result.excluded_tickers}<p>
+                   `;
+
+                    resultDiv.innerHTML += `<h3>Industry Weightage</h3>`;
+                    resultDiv.innerHTML += `<ul>`;
+                    Object.entries(result.industry_weights_percent).forEach(([industry, weight]) => {
+                        resultDiv.innerHTML += `<li>${industry}: ${weight.toFixed(2)}%</li>`;
+                    });
+                    resultDiv.innerHTML += `</ul>`;
+
+                    Object.keys(result.sorted_by_industry).forEach(industry => {
+                        resultDiv.innerHTML += `<h3>${industry}</h3>`;
+                        resultDiv.innerHTML += `
+                           <table>
+                               <thead>
+                                   <tr>
+                                       <th>Stock</th>
+                                       <th>Weight (%)</th>
+                                       <th>Alpha (%)</th>
+                                       <th>Beta</th>
+                                       <th>Stock Return (%)</th>
+                                   </tr>
+                               </thead>
+                               <tbody>
+                                   ${result.sorted_by_industry[industry].map(stock => `
+                                       <tr>
+                                           <td>${stock.ticker}</td>
+                                           <td>${stock.weight.toFixed(2)}</td>
+                                           <td>${stock.alpha.toFixed(2)}</td>
+                                           <td>${stock.beta.toFixed(2)}</td>
+                                           <td>${stock.stock_return_percent.toFixed(2)}</td>
+                                       </tr>
+                                   `).join('')}
+                               </tbody>
+                           </table>
+                       `;
+                    });
+                })
+                .catch(function (error) {
+                    console.error('Error:', error);
+                    resultDiv.innerHTML = `<p>Error communicating with server</p>`;
+                });
+        });
+    </script>
+</body>
+
+</html>
